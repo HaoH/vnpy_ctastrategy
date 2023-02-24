@@ -99,6 +99,13 @@ class CtaTemplate(ABC):
         pass
 
     @virtual
+    def on_init_data(self, data: List[BarData]) -> None:
+        """
+        Callback when strategy data is inited.
+        """
+        pass
+
+    @virtual
     def on_start(self) -> None:
         """
         Callback when strategy is started.
