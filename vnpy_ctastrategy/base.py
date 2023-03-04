@@ -7,7 +7,7 @@ from enum import Enum
 from datetime import datetime, timedelta
 from typing import Dict
 
-from vnpy.trader.constant import Direction, Offset, Interval
+from vnpy.trader.constant import Direction, Offset, Interval, OrderType
 
 APP_NAME = "CtaStrategy"
 STOPORDER_PREFIX = "STOP"
@@ -43,6 +43,9 @@ class StopOrder:
     net: bool = False
     vt_orderids: list = field(default_factory=list)
     status: StopOrderStatus = StopOrderStatus.WAITING
+    order_type: OrderType = OrderType.STOP
+    trigger_price: float = None
+    trigger_datetime: datetime = None
 
 
 EVENT_CTA_LOG = "eCtaLog"

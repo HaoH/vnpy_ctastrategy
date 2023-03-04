@@ -35,6 +35,7 @@ from .base import (
     INTERVAL_DELTA_MAP
 )
 from .template import CtaTemplate
+from ex_vnpy.source_manager import SourceManager
 
 
 class BacktestingEngine:
@@ -85,6 +86,8 @@ class BacktestingEngine:
 
         self.daily_results: Dict[date, DailyResult] = {}
         self.daily_df: DataFrame = None
+
+        self.sm: SourceManager = None
 
     def clear_data(self) -> None:
         """
@@ -216,9 +219,11 @@ class BacktestingEngine:
         else:
             func = self.new_tick
 
+        self.sm = SourceManager()
+        self.strategy.on_init_data(self.sm)      # 初始化 SourceManager
+
         self.strategy.on_init()
         self.strategy.inited = True
-        self.strategy.on_init_data(self.history_data[:ix])      # 初始化 SourceManager
         self.output("策略初始化完成")
 
         self.strategy.on_start()
