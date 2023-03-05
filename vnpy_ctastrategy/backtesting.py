@@ -36,6 +36,7 @@ from .base import (
 )
 from .template import CtaTemplate
 from ex_vnpy.source_manager import SourceManager
+from ex_vnpy.order_manager import OrderManager
 
 
 class BacktestingEngine:
@@ -88,6 +89,7 @@ class BacktestingEngine:
         self.daily_df: DataFrame = None
 
         self.sm: SourceManager = None
+        self.om: OrderManager = None
 
     def clear_data(self) -> None:
         """
@@ -219,11 +221,11 @@ class BacktestingEngine:
         else:
             func = self.new_tick
 
-        self.sm = SourceManager()
-        self.strategy.on_init_data(self.sm)      # 初始化 SourceManager
-
         self.strategy.on_init()
         self.strategy.inited = True
+        self.sm = SourceManager()
+        self.om = OrderManager(self.strategy, self)
+        self.strategy.on_init_data(self.sm, self.om)      # 初始化 SourceManager, OrderManager
         self.output("策略初始化完成")
 
         self.strategy.on_start()
@@ -478,7 +480,7 @@ class BacktestingEngine:
         self.output("策略统计指标计算完成")
         return statistics
 
-    def show_chart(self, df: DataFrame = None) -> None:
+    def show_chart(self, df: DataFrame = None, title: str = "") -> None:
         """"""
         # Check DataFrame input exterior
         if df is None:
@@ -518,7 +520,7 @@ class BacktestingEngine:
         fig.add_trace(pnl_bar, row=3, col=1)
         fig.add_trace(pnl_histogram, row=4, col=1)
 
-        fig.update_layout(height=1000, width=1000)
+        fig.update_layout(height=1000, width=1000, title_text=title)
         fig.show()
 
     def run_bf_optimization(
@@ -1095,7 +1097,6 @@ def load_tick_data(
     return database.load_tick_data(
         symbol, exchange, start, end
     )
-
 
 def evaluate(
     target_name: str,
