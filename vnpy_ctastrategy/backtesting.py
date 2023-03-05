@@ -35,6 +35,7 @@ from .base import (
     INTERVAL_DELTA_MAP
 )
 from .template import CtaTemplate
+from ex_vnpy.ex_strategy_template import ExStrategyTemplate
 from ex_vnpy.source_manager import SourceManager
 from ex_vnpy.order_manager import OrderManager
 
@@ -62,7 +63,8 @@ class BacktestingEngine:
         self.mode: BacktestingMode = BacktestingMode.BAR
 
         self.strategy_class: Type[CtaTemplate] = None
-        self.strategy: CtaTemplate = None
+        # self.strategy: CtaTemplate = None
+        self.strategy: ExStrategyTemplate = None
         self.tick: TickData
         self.bar: BarData
         self.datetime: datetime = None
