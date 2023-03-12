@@ -56,7 +56,7 @@ class BacktestingEngine:
         self.rate: float = 0
         self.slippage: float = 0
         self.size: float = 1
-        self.pricetick: float = 0
+        self.price_tick: float = 0
         self.capital: int = 1_000_000
         self.risk_free: float = 0
         self.annual_days: int = 240
@@ -124,7 +124,7 @@ class BacktestingEngine:
         rate: float,
         slippage: float,
         size: float,
-        pricetick: float,
+        price_tick: float,
         capital: int = 0,
         end: datetime = None,
         mode: BacktestingMode = BacktestingMode.BAR,
@@ -138,7 +138,7 @@ class BacktestingEngine:
         self.rate = rate
         self.slippage = slippage
         self.size = size
-        self.pricetick = pricetick
+        self.price_tick = price_tick
         self.start = start
 
         self.symbol, exchange_str = self.vt_symbol.split(".")
@@ -225,12 +225,12 @@ class BacktestingEngine:
 
         self.strategy.on_init()
         self.strategy.inited = True
-        self.sm = SourceManager()
+        self.sm = SourceManager([], centrum=True)
         self.om = OrderManager(self.strategy, self)
         self.strategy.on_init_data(self.sm, self.om)      # 初始化 SourceManager, OrderManager
         self.output("策略初始化完成")
 
-        self.strategy.on_start()
+        self.strategy.on_start()                    # 对sm进行首次计算
         self.strategy.trading = True
         self.output("开始回放历史数据")
 
@@ -828,7 +828,7 @@ class BacktestingEngine:
         net: bool
     ) -> list:
         """"""
-        price: float = round_to(price, self.pricetick)
+        price: float = round_to(price, self.price_tick)
         if stop:
             vt_orderid: str = self.send_stop_order(direction, offset, price, volume)
         else:
@@ -957,7 +957,7 @@ class BacktestingEngine:
         """
         Return contract pricetick data.
         """
-        return self.pricetick
+        return self.price_tick
 
     def get_size(self, strategy: CtaTemplate) -> int:
         """
@@ -1127,7 +1127,7 @@ def evaluate(
         rate=rate,
         slippage=slippage,
         size=size,
-        pricetick=pricetick,
+        price_tick=pricetick,
         capital=capital,
         end=end,
         mode=mode
@@ -1157,7 +1157,7 @@ def wrap_evaluate(engine: BacktestingEngine, target_name: str) -> callable:
         engine.rate,
         engine.slippage,
         engine.size,
-        engine.pricetick,
+        engine.price_tick,
         engine.capital,
         engine.end,
         engine.mode
