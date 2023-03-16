@@ -14,7 +14,8 @@ from vnpy.trader.constant import (
     Offset,
     Exchange,
     Interval,
-    Status
+    Status,
+    OrderType
 )
 from vnpy.trader.database import get_database, BaseDatabase
 from vnpy.trader.object import OrderData, TradeData, BarData, TickData
@@ -866,7 +867,8 @@ class BacktestingEngine:
         direction: Direction,
         offset: Offset,
         price: float,
-        volume: float
+        volume: float,
+        order_type: OrderType = OrderType.LIMIT
     ) -> str:
         """"""
         self.limit_order_count += 1
@@ -877,6 +879,7 @@ class BacktestingEngine:
             orderid=str(self.limit_order_count),
             direction=direction,
             offset=offset,
+            type=order_type,
             price=price,
             volume=volume,
             status=Status.SUBMITTING,
