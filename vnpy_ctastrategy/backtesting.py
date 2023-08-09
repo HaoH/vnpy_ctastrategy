@@ -1,3 +1,4 @@
+import logging
 from collections import defaultdict
 from datetime import date, datetime, timedelta
 from typing import Callable, List, Dict, Optional, Type
@@ -39,6 +40,8 @@ from .template import CtaTemplate
 from ex_vnpy.ex_strategy_template import ExStrategyTemplate
 from ex_vnpy.source_manager import SourceManager
 from ex_vnpy.order_manager import OrderManager
+
+logger = logging.getLogger("BacktestingEngine")
 
 
 class BacktestingEngine:
@@ -483,7 +486,7 @@ class BacktestingEngine:
         self.output("策略统计指标计算完成")
         return statistics
 
-    def show_chart(self, df: DataFrame = None, title: str = "") -> None:
+    def show_chart(self, df: DataFrame = None, title: str = "", annotations: str = "") -> None:
         """"""
         # Check DataFrame input exterior
         if df is None:
@@ -494,11 +497,23 @@ class BacktestingEngine:
             return
 
         fig = make_subplots(
-            rows=4,
+            rows=5,
             cols=1,
-            subplot_titles=["Balance", "Drawdown", "Daily Pnl", "Pnl Distribution"],
+            subplot_titles=["Params", "Balance", "Drawdown", "Daily Pnl", "Pnl Distribution"],
             vertical_spacing=0.06
         )
+
+        rect_shape = {
+            'type': 'rect',
+            # 'xref': 'paper',  # x 坐标轴的参考是整个画布
+            # 'yref': 'paper',  # y 坐标轴的参考是整个画布
+            'x0': 0,        # 矩形左上角的 x 坐标
+            'y0': 2,        # 矩形左上角的 y 坐标
+            'x1': 4,        # 矩形右下角的 x 坐标
+            'y1': 0,        # 矩形右下角的 y 坐标
+            'line': {'color': 'white'},
+            'fillcolor': 'rgba(255, 255, 255, 0.7)'
+        }
 
         balance_line = go.Scatter(
             x=df.index,
@@ -518,12 +533,23 @@ class BacktestingEngine:
         pnl_bar = go.Bar(y=df["net_pnl"], name="Daily Pnl")
         pnl_histogram = go.Histogram(x=df["net_pnl"], nbinsx=100, name="Days")
 
-        fig.add_trace(balance_line, row=1, col=1)
-        fig.add_trace(drawdown_scatter, row=2, col=1)
-        fig.add_trace(pnl_bar, row=3, col=1)
-        fig.add_trace(pnl_histogram, row=4, col=1)
+        fig.add_shape(rect_shape, row=1, col=1)
+        fig.add_trace(balance_line, row=2, col=1)
+        fig.add_trace(drawdown_scatter, row=3, col=1)
+        fig.add_trace(pnl_bar, row=4, col=1)
+        fig.add_trace(pnl_histogram, row=5, col=1)
 
-        fig.update_layout(height=1000, width=1000, title_text=title)
+        fig.add_annotation(
+            x=1,
+            y=1,
+            xref='x1',
+            yref='y1',
+            text=annotations,
+            showarrow=False,
+            font=dict(size=12),
+            align="left"  # 将文本左对齐
+        )
+        fig.update_layout(height=1200, width=1200, title_text=title)
         fig.show()
 
     def run_bf_optimization(
@@ -978,7 +1004,8 @@ class BacktestingEngine:
         """
         Output message of backtesting engine.
         """
-        print(f"{datetime.now()}\t{msg}")
+        # print(f"{datetime.now()}\t{msg}")
+        logger.info(f"{datetime.now()}\t{msg}")
 
     def get_all_trades(self) -> list:
         """
