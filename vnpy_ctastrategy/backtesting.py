@@ -38,8 +38,8 @@ from .base import (
 )
 from .template import CtaTemplate
 from ex_vnpy.ex_strategy_template import ExStrategyTemplate
-from ex_vnpy.source_manager import SourceManager
-from ex_vnpy.order_manager import OrderManager
+from ex_vnpy.manager.source_manager import SourceManager
+from ex_vnpy.manager.order_manager import OrderManager
 
 logger = logging.getLogger("BacktestingEngine")
 
@@ -70,7 +70,7 @@ class BacktestingEngine:
         # self.strategy: CtaTemplate = None
         self.strategy: ExStrategyTemplate = None
         self.tick: TickData
-        self.bar: BarData
+        self.bar: BarData = None
         self.datetime: datetime = None
 
         self.interval: Interval = None
@@ -96,6 +96,7 @@ class BacktestingEngine:
 
         self.sm: SourceManager = None
         self.om: OrderManager = None
+        self.ta: list = []
 
     def clear_data(self) -> None:
         """
@@ -133,7 +134,8 @@ class BacktestingEngine:
         end: datetime = None,
         mode: BacktestingMode = BacktestingMode.BAR,
         risk_free: float = 0,
-        annual_days: int = 240
+        annual_days: int = 240,
+        ta: List = None
     ) -> None:
         """"""
         self.mode = mode
@@ -157,6 +159,8 @@ class BacktestingEngine:
         self.mode = mode
         self.risk_free = risk_free
         self.annual_days = annual_days
+
+        self.ta = ta
 
     def add_strategy(self, strategy_class: Type[CtaTemplate], setting: dict) -> None:
         """"""
@@ -227,14 +231,18 @@ class BacktestingEngine:
         else:
             func = self.new_tick
 
-        self.strategy.on_init()
-        self.strategy.inited = True
-        self.sm = SourceManager([], centrum=True)
+        # 初始化 SourceManager, OrderManager
+        self.sm = SourceManager([], ta=self.ta, centrum=True)
         self.om = OrderManager(self.strategy, self)
-        self.strategy.on_init_data(self.sm, self.om)      # 初始化 SourceManager, OrderManager
+        self.strategy.set_source_manager(self.sm)
+        self.strategy.set_order_manager(self.om)
+
+        # 初始化detector
+        self.strategy.on_init()
+        # self.strategy.inited = True
         self.output("策略初始化完成")
 
-        self.strategy.on_start()                    # 对sm进行首次计算
+        self.strategy.on_start()
         self.strategy.trading = True
         self.output("开始回放历史数据")
 
@@ -549,7 +557,7 @@ class BacktestingEngine:
             font=dict(size=12),
             align="left"  # 将文本左对齐
         )
-        fig.update_layout(height=1200, width=1200, title_text=title)
+        fig.update_layout(height=1500, width=1200, title_text=title)
         fig.show()
 
     def run_bf_optimization(

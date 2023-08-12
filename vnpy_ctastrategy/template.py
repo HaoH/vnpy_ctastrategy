@@ -2,7 +2,7 @@ from abc import ABC
 from copy import copy
 from typing import Any, Callable, List
 
-from ex_vnpy.source_manager import SourceManager
+from ex_vnpy.manager.source_manager import SourceManager
 from vnpy.trader.constant import Interval, Direction, Offset
 from vnpy.trader.object import BarData, TickData, OrderData, TradeData
 from vnpy.trader.utility import virtual
@@ -100,7 +100,14 @@ class CtaTemplate(ABC):
         pass
 
     @virtual
-    def on_init_data(self, sm: SourceManager) -> None:
+    def set_source_manager(self, sm: SourceManager) -> None:
+        """
+        Callback when strategy data is inited.
+        """
+        pass
+
+    @virtual
+    def set_order_manager(self, om: "OrderManager") -> None:
         """
         Callback when strategy data is inited.
         """
