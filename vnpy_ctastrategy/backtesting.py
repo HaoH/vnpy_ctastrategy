@@ -98,6 +98,8 @@ class BacktestingEngine:
         self.om: OrderManager = None
         self.ta: list = []
 
+        self.result_statistics = {}
+
     def clear_data(self) -> None:
         """
         Clear all data of last backtesting.
@@ -120,6 +122,7 @@ class BacktestingEngine:
 
         self.logs.clear()
         self.daily_results.clear()
+        self.result_statistics = {}
 
     def set_parameters(
         self,
@@ -273,7 +276,7 @@ class BacktestingEngine:
         if not self.trades:
             self.output("回测成交记录为空")
 
-        # Add trade data into daily reuslt.
+        # Add trade data into daily result.
         for trade in self.trades.values():
             d: date = trade.datetime.date()
             daily_result: DailyResult = self.daily_results[d]
@@ -492,6 +495,7 @@ class BacktestingEngine:
             statistics[key] = np.nan_to_num(value)
 
         self.output("策略统计指标计算完成")
+        self.result_statistics = statistics
         return statistics
 
     def show_chart(self, df: DataFrame = None, title: str = "", annotations: str = "") -> None:
@@ -1033,6 +1037,15 @@ class BacktestingEngine:
         """
         return list(self.daily_results.values())
 
+    def initialize_daily_results(self):
+        for data in self.history_data:
+            d: date = data.datetime.date()
+            daily_result: Optional[DailyResult] = self.daily_results.get(d, None)
+            if daily_result:
+                daily_result.close_price = data.close_price
+            else:
+                self.daily_results[d] = DailyResult(d, data.close_price)
+
 
 class DailyResult:
     """"""
@@ -1208,3 +1221,4 @@ def get_target_value(result: list) -> float:
     Get target value for sorting optimization results.
     """
     return result[1]
+
