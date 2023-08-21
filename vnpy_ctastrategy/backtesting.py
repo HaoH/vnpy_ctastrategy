@@ -138,7 +138,8 @@ class BacktestingEngine:
         mode: BacktestingMode = BacktestingMode.BAR,
         risk_free: float = 0,
         annual_days: int = 240,
-        ta: List = None
+        ta: List = None,
+        strategy_name: str = None
     ) -> None:
         """"""
         self.mode = mode
@@ -1017,7 +1018,7 @@ class BacktestingEngine:
         Output message of backtesting engine.
         """
         # print(f"{datetime.now()}\t{msg}")
-        logger.info(f"{datetime.now()}\t{msg}")
+        logger.info(f"{msg}")
 
     def get_all_trades(self) -> list:
         """
