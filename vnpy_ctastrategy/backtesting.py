@@ -1,6 +1,9 @@
+import importlib
 import logging
+import re
 from collections import defaultdict
 from datetime import date, datetime, timedelta
+from types import ModuleType
 from typing import Callable, List, Dict, Optional, Type
 from functools import lru_cache, partial
 import traceback
@@ -96,7 +99,7 @@ class BacktestingEngine:
 
         self.sm: SourceManager = None
         self.om: OrderManager = None
-        self.ta: list = []
+        self.ta: dict = {}
 
         self.result_statistics = {}
 
@@ -138,7 +141,9 @@ class BacktestingEngine:
         mode: BacktestingMode = BacktestingMode.BAR,
         risk_free: float = 0,
         annual_days: int = 240,
-        ta: List = None,
+        ta: dict = {},
+        strategy_settings: dict = {},
+        detector_settings: dict = {},
         strategy_name: str = None
     ) -> None:
         """"""
@@ -165,6 +170,18 @@ class BacktestingEngine:
         self.annual_days = annual_days
 
         self.ta = ta
+
+        # 初始化strategy
+        strategy_file_stem = re.sub(r'(?<!^)(?=[A-Z])', '_', strategy_name).lower()
+        module: ModuleType = importlib.import_module(f'src.strategy.{strategy_file_stem}')
+        strategy_class = getattr(module, strategy_name)
+        self.add_strategy(strategy_class, strategy_settings)
+
+        for detector_name, detector_setting in detector_settings.items():
+            detector_file_stem = re.sub(r'(?<!^)(?=[A-Z])', '_', detector_name).lower()
+            detector_module: ModuleType = importlib.import_module(f'src.signals.{detector_file_stem}')
+            detector_class = getattr(detector_module, detector_name)
+            self.strategy.add_signal_detector(detector_class(**detector_setting))
 
     def add_strategy(self, strategy_class: Type[CtaTemplate], setting: dict) -> None:
         """"""
