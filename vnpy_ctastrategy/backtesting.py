@@ -1,3 +1,4 @@
+import copy
 import importlib
 import logging
 import re
@@ -68,6 +69,8 @@ class BacktestingEngine:
         self.risk_free: float = 0
         self.annual_days: int = 240
         self.mode: BacktestingMode = BacktestingMode.BAR
+        self.strategy_settings = None
+        self.detector_settings = None
 
         self.strategy_class: Type[CtaTemplate] = None
         # self.strategy: CtaTemplate = None
@@ -131,20 +134,23 @@ class BacktestingEngine:
         self,
         vt_symbol: str,
         interval: Interval,
-        start: datetime,
+        start_dt: datetime,
         rate: float,
         slippage: float,
         size: float,
         price_tick: float,
         capital: int = 0,
-        end: datetime = None,
+        end_dt: datetime = None,
         mode: BacktestingMode = BacktestingMode.BAR,
         risk_free: float = 0,
         annual_days: int = 240,
         ta: dict = {},
         strategy_settings: dict = {},
         detector_settings: dict = {},
-        strategy_name: str = None
+        strategy_name: str = None,
+        strategy_class: CtaTemplate = None,
+        classes: dict = {},
+        **kwargs
     ) -> None:
         """"""
         self.mode = mode
@@ -154,16 +160,16 @@ class BacktestingEngine:
         self.slippage = slippage
         self.size = size
         self.price_tick = price_tick
-        self.start = start
+        self.start = start_dt
 
         self.symbol, exchange_str = self.vt_symbol.split(".")
         self.exchange = Exchange(exchange_str)
 
         self.capital = capital
 
-        if not end:
-            end = datetime.now()
-        self.end = end.replace(hour=23, minute=59, second=59)
+        if not end_dt:
+            end_dt = datetime.now()
+        self.end = end_dt.replace(hour=23, minute=59, second=59)
 
         self.mode = mode
         self.risk_free = risk_free
@@ -172,15 +178,27 @@ class BacktestingEngine:
         self.ta = ta
 
         # 初始化strategy
-        strategy_file_stem = re.sub(r'(?<!^)(?=[A-Z])', '_', strategy_name).lower()
-        module: ModuleType = importlib.import_module(f'src.strategy.{strategy_file_stem}')
-        strategy_class = getattr(module, strategy_name)
+        self.strategy_settings = strategy_settings
+        if strategy_class is None:
+            if strategy_name in classes.keys():
+                strategy_class = classes[strategy_name]
+            else:
+                strategy_file_stem = re.sub(r'(?<!^)(?=[A-Z])', '_', strategy_name).lower()
+                module: ModuleType = importlib.import_module(f'src.strategy.{strategy_file_stem}')
+                strategy_class = getattr(module, strategy_name)
         self.add_strategy(strategy_class, strategy_settings)
 
+        # 初始化detector
+        self.detector_settings = detector_settings
+        # clear detectors to avoid duplicate
+        self.strategy.detectors = {}
         for detector_name, detector_setting in detector_settings.items():
-            detector_file_stem = re.sub(r'(?<!^)(?=[A-Z])', '_', detector_name).lower()
-            detector_module: ModuleType = importlib.import_module(f'src.signals.{detector_file_stem}')
-            detector_class = getattr(detector_module, detector_name)
+            if detector_name in classes.keys():
+                detector_class = classes[detector_name]
+            else:
+                detector_file_stem = re.sub(r'(?<!^)(?=[A-Z])', '_', detector_name).lower()
+                detector_module: ModuleType = importlib.import_module(f'src.signals.{detector_file_stem}')
+                detector_class = getattr(detector_module, detector_name)
             self.strategy.add_signal_detector(detector_class(**detector_setting))
 
     def add_strategy(self, strategy_class: Type[CtaTemplate], setting: dict) -> None:
@@ -1182,34 +1200,55 @@ def evaluate(
     capital: int,
     end: datetime,
     mode: BacktestingMode,
-    setting: dict
+    ta: dict,
+    strategy_settings: dict,
+    detector_settings: dict,
+    settings: dict
 ) -> tuple:
     """
     Function for running in multiprocessing.pool
     """
-    engine: BacktestingEngine = BacktestingEngine()
+    from src.engine.backtesting_engine import ExBacktestingEngine
+
+    engine: BacktestingEngine = ExBacktestingEngine()
+
+    clones = {}
+    clones["ta"] = copy.deepcopy(ta)
+    clones["strategy_settings"] = copy.deepcopy(strategy_settings)
+    clones["detector_settings"] = copy.deepcopy(detector_settings)
+    for key, value in settings.items():
+        keys = key.split('.')
+        if len(keys) <= 0:
+            continue
+        clone_settings = clones[keys[0]]
+        for k in keys[1:-1]:
+            clone_settings = clone_settings[k]
+        clone_settings[keys[-1]] = value
 
     engine.set_parameters(
         vt_symbol=vt_symbol,
         interval=interval,
-        start=start,
+        start_dt=start,
         rate=rate,
         slippage=slippage,
         size=size,
         price_tick=pricetick,
         capital=capital,
-        end=end,
-        mode=mode
+        end_dt=end,
+        mode=mode,
+        strategy_class=strategy_class,
+        ta=clones["ta"],
+        strategy_settings=clones["strategy_settings"],
+        detector_settings=clones["detector_settings"]
     )
 
-    engine.add_strategy(strategy_class, setting)
     engine.load_data()
     engine.run_backtesting()
     engine.calculate_result()
     statistics: dict = engine.calculate_statistics(output=False)
 
     target_value: float = statistics[target_name]
-    return (setting, target_value, statistics)
+    return settings, target_value, statistics
 
 
 def wrap_evaluate(engine: BacktestingEngine, target_name: str) -> callable:
@@ -1229,7 +1268,10 @@ def wrap_evaluate(engine: BacktestingEngine, target_name: str) -> callable:
         engine.price_tick,
         engine.capital,
         engine.end,
-        engine.mode
+        engine.mode,
+        engine.ta,
+        engine.strategy_settings,
+        engine.detector_settings
     )
     return func
 
