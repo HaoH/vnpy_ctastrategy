@@ -63,12 +63,13 @@ class BacktestingEngine:
         self.end: datetime = None
         self.rate: float = 0
         self.slippage: float = 0
-        self.size: float = 1
+        self.size: int = 100
         self.price_tick: float = 0
         self.capital: int = 1_000_000
         self.risk_free: float = 0
         self.annual_days: int = 240
         self.mode: BacktestingMode = BacktestingMode.BAR
+        self.trade_settings = None
         self.strategy_settings = None
         self.detector_settings = None
 
@@ -142,15 +143,9 @@ class BacktestingEngine:
         vt_symbol: str,
         interval: Interval,
         start_dt: datetime,
-        rate: float,
-        slippage: float,
-        size: float,
-        price_tick: float,
-        capital: int = 0,
         end_dt: datetime = None,
         mode: BacktestingMode = BacktestingMode.BAR,
-        risk_free: float = 0,
-        annual_days: int = 240,
+        trade_settings: dict = {},
         ta: dict = {},
         strategy_settings: dict = {},
         detector_settings: dict = {},
@@ -163,25 +158,25 @@ class BacktestingEngine:
         self.mode = mode
         self.vt_symbol = vt_symbol
         self.interval = Interval(interval)
-        self.rate = rate
-        self.slippage = slippage
-        self.size = size
-        self.price_tick = price_tick
-        self.start = start_dt
+        self.mode = mode
 
+        self.start = start_dt
         self.symbol, exchange_str = self.vt_symbol.split(".")
         self.exchange = Exchange(exchange_str)
         self.symbol_meta = load_symbol_meta(self.symbol)
-
-        self.capital = capital
 
         if not end_dt:
             end_dt = datetime.now()
         self.end = end_dt.replace(hour=23, minute=59, second=59)
 
-        self.mode = mode
-        self.risk_free = risk_free
-        self.annual_days = annual_days
+        self.trade_settings = trade_settings
+        self.capital = trade_settings["fix_capital"]
+        self.size = trade_settings["unit_size"]
+        self.price_tick = trade_settings["price_tick"]
+        self.rate = trade_settings["commission_rate"]
+        self.slippage = trade_settings["slippage"]
+        self.risk_free = trade_settings["risk_free"]
+        self.annual_days = trade_settings["annual_days"]
 
         self.ta = ta
 
@@ -195,6 +190,7 @@ class BacktestingEngine:
                 module: ModuleType = importlib.import_module(f'src.strategy.{strategy_file_stem}')
                 strategy_class = getattr(module, strategy_name)
         self.add_strategy(strategy_class, strategy_settings)
+        self.strategy.update_trade_settings(trade_settings)
 
         # 初始化detector
         self.detector_settings = detector_settings
@@ -390,12 +386,21 @@ class BacktestingEngine:
         return_drawdown_ratio: float = 0
 
         # 增加胜率指标
-        win_rate_dict: dict = {}
-        win_rate_weighted: float = 0
-        win_rate_normal: float = 0
-        total_entry_count: float = 0
-        entry_win_count: float = 0
-        entry_loss_count: float = 0
+        win_rate_dict: dict = {
+            "win_rate_weighted": 0,
+            "loss_rate_weighted": 0,
+            "win_rate_normal": 0,
+            "total_entry_count": 0,
+            "entry_win_count": 0,
+            "entry_loss_count": 0,
+            "win_count_8": 0,
+            "win_count_16": 0,
+            "win_count_16a": 0,
+            "loss_count_2": 0,
+            "loss_count_5": 0,
+            "loss_count_8": 0,
+            "loss_count_8a": 0
+        }
 
         # Check if balance is always positive
         positive_balance: bool = False
@@ -477,12 +482,6 @@ class BacktestingEngine:
 
             # 计算胜率指标
             win_rate_dict = self.calculate_win_rate()
-            win_rate_weighted = win_rate_dict['win_rate_weighted']
-            loss_rate_weighted = win_rate_dict['loss_rate_weighted']
-            win_rate_normal = win_rate_dict['win_rate_normal']
-            total_entry_count = win_rate_dict["total_entry_count"]
-            entry_win_count = win_rate_dict["entry_win_count"]
-            entry_loss_count = win_rate_dict["entry_loss_count"]
 
         # Output
         if output:
@@ -505,12 +504,12 @@ class BacktestingEngine:
             self.output(f"百分比最大回撤: {max_ddpercent:,.2%}")
             self.output(f"最长回撤天数: \t{max_drawdown_duration}")
 
-            self.output(f"总胜率：\t{win_rate_normal:.2%}")
-            self.output(f"总加权胜率：\t{win_rate_weighted:.2%}")
-            self.output(f"总加权败率：\t{loss_rate_weighted:.2%}")
-            self.output(f"入场总次数：\t{int(total_entry_count)}")
-            self.output(f"入场成功次数：\t{int(entry_win_count)}")
-            self.output(f"入场失败次数：\t{int(entry_loss_count)}")
+            self.output(f"总胜率：\t{win_rate_dict['win_rate_normal']:.2%}")
+            self.output(f"总加权胜率：\t{win_rate_dict['win_rate_weighted']:.2%}")
+            self.output(f"总加权败率：\t{win_rate_dict['loss_rate_weighted']:.2%}")
+            self.output(f"入场总次数：\t{int(win_rate_dict['total_entry_count'])}")
+            self.output(f"入场成功次数：\t{int(win_rate_dict['entry_win_count'])}")
+            self.output(f"入场失败次数：\t{int(win_rate_dict['entry_loss_count'])}")
 
             self.output(f"总盈亏：\t{total_net_pnl:,.2f}")
             self.output(f"总手续费：\t{total_commission:,.2f}")
