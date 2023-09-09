@@ -14,6 +14,7 @@ from pandas import DataFrame, Series
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
+from ex_vnpy import BasicStockData, load_symbol_meta
 from vnpy.trader.constant import (
     Direction,
     Offset,
@@ -45,7 +46,6 @@ from ex_vnpy.ex_strategy_template import ExStrategyTemplate
 from ex_vnpy.manager.source_manager import SourceManager
 from ex_vnpy.manager.order_manager import OrderManager
 
-logger = logging.getLogger("BacktestingEngine")
 
 
 class BacktestingEngine:
@@ -106,6 +106,10 @@ class BacktestingEngine:
 
         self.result_statistics = {}
 
+        self.logger = logging.getLogger("BacktestingEngine")
+
+        self.symbol_meta: BasicStockData = None
+
     def clear_data(self) -> None:
         """
         Clear all data of last backtesting.
@@ -129,6 +133,9 @@ class BacktestingEngine:
         self.logs.clear()
         self.daily_results.clear()
         self.result_statistics = {}
+
+    def log_parameters(self, output: bool=False) -> str:
+        pass
 
     def set_parameters(
         self,
@@ -164,6 +171,7 @@ class BacktestingEngine:
 
         self.symbol, exchange_str = self.vt_symbol.split(".")
         self.exchange = Exchange(exchange_str)
+        self.symbol_meta = load_symbol_meta(self.symbol)
 
         self.capital = capital
 
@@ -381,6 +389,14 @@ class BacktestingEngine:
         sharpe_ratio: float = 0
         return_drawdown_ratio: float = 0
 
+        # 增加胜率指标
+        win_rate_dict: dict = {}
+        win_rate_weighted: float = 0
+        win_rate_normal: float = 0
+        total_entry_count: float = 0
+        entry_win_count: float = 0
+        entry_loss_count: float = 0
+
         # Check if balance is always positive
         positive_balance: bool = False
 
@@ -400,7 +416,7 @@ class BacktestingEngine:
                     min_periods=1, window=len(df), center=False).max()
             )
             df["drawdown"] = df["balance"] - df["highlevel"]
-            df["ddpercent"] = df["drawdown"] / df["highlevel"] * 100
+            df["ddpercent"] = df["drawdown"] / df["highlevel"]
 
             # All balance value needs to be positive
             positive_balance = (df["balance"] > 0).all()
@@ -443,10 +459,10 @@ class BacktestingEngine:
             total_trade_count: int = df["trade_count"].sum()
             daily_trade_count: int = total_trade_count / total_days
 
-            total_return: float = (end_balance / self.capital - 1) * 100
+            total_return: float = (end_balance / self.capital - 1)
             annual_return: float = total_return / total_days * self.annual_days
-            daily_return: float = df["return"].mean() * 100
-            return_std: float = df["return"].std() * 100
+            daily_return: float = df["return"].mean()
+            return_std: float = df["return"].std()
 
             if return_std:
                 daily_risk_free: float = self.risk_free / np.sqrt(self.annual_days)
@@ -459,9 +475,20 @@ class BacktestingEngine:
             else:
                 return_drawdown_ratio = 0
 
+            # 计算胜率指标
+            win_rate_dict = self.calculate_win_rate()
+            win_rate_weighted = win_rate_dict['win_rate_weighted']
+            loss_rate_weighted = win_rate_dict['loss_rate_weighted']
+            win_rate_normal = win_rate_dict['win_rate_normal']
+            total_entry_count = win_rate_dict["total_entry_count"]
+            entry_win_count = win_rate_dict["entry_win_count"]
+            entry_loss_count = win_rate_dict["entry_loss_count"]
+
         # Output
         if output:
             self.output("-" * 30)
+            self.output(f"股票代码: {self.vt_symbol}")
+            self.output(f"股票名称: {self.symbol_meta.name}")
             self.output(f"首个交易日：\t{start_date}")
             self.output(f"最后交易日：\t{end_date}")
 
@@ -472,11 +499,18 @@ class BacktestingEngine:
             self.output(f"起始资金：\t{self.capital:,.2f}")
             self.output(f"结束资金：\t{end_balance:,.2f}")
 
-            self.output(f"总收益率：\t{total_return:,.2f}%")
-            self.output(f"年化收益：\t{annual_return:,.2f}%")
+            self.output(f"总收益率：\t{total_return:,.2%}")
+            self.output(f"年化收益：\t{annual_return:,.2%}")
             self.output(f"最大回撤: \t{max_drawdown:,.2f}")
-            self.output(f"百分比最大回撤: {max_ddpercent:,.2f}%")
+            self.output(f"百分比最大回撤: {max_ddpercent:,.2%}")
             self.output(f"最长回撤天数: \t{max_drawdown_duration}")
+
+            self.output(f"总胜率：\t{win_rate_normal:.2%}")
+            self.output(f"总加权胜率：\t{win_rate_weighted:.2%}")
+            self.output(f"总加权败率：\t{loss_rate_weighted:.2%}")
+            self.output(f"入场总次数：\t{int(total_entry_count)}")
+            self.output(f"入场成功次数：\t{int(entry_win_count)}")
+            self.output(f"入场失败次数：\t{int(entry_loss_count)}")
 
             self.output(f"总盈亏：\t{total_net_pnl:,.2f}")
             self.output(f"总手续费：\t{total_commission:,.2f}")
@@ -490,12 +524,14 @@ class BacktestingEngine:
             self.output(f"日均成交金额：\t{daily_turnover:,.2f}")
             self.output(f"日均成交笔数：\t{daily_trade_count}")
 
-            self.output(f"日均收益率：\t{daily_return:,.2f}%")
-            self.output(f"收益标准差：\t{return_std:,.2f}%")
+            self.output(f"日均收益率：\t{daily_return:,.2%}")
+            self.output(f"收益标准差：\t{return_std:,.2%}")
             self.output(f"Sharpe Ratio：\t{sharpe_ratio:,.2f}")
             self.output(f"收益回撤比：\t{return_drawdown_ratio:,.2f}")
 
         statistics: dict = {
+            "vt_symbol": self.vt_symbol,
+            "name": self.symbol_meta.name,
             "start_date": start_date,
             "end_date": end_date,
             "total_days": total_days,
@@ -521,8 +557,10 @@ class BacktestingEngine:
             "daily_return": daily_return,
             "return_std": return_std,
             "sharpe_ratio": sharpe_ratio,
-            "return_drawdown_ratio": return_drawdown_ratio,
+            "return_drawdown_ratio": return_drawdown_ratio
         }
+
+        statistics.update(win_rate_dict)
 
         # Filter potential error infinite value
         for key, value in statistics.items():
@@ -1053,7 +1091,7 @@ class BacktestingEngine:
         Output message of backtesting engine.
         """
         # print(f"{datetime.now()}\t{msg}")
-        logger.info(f"{msg}")
+        self.logger.info(f"{msg}")
 
     def get_all_trades(self) -> list:
         """
@@ -1081,6 +1119,9 @@ class BacktestingEngine:
                 daily_result.close_price = data.close_price
             else:
                 self.daily_results[d] = DailyResult(d, data.close_price)
+
+    def calculate_win_rate(self) -> dict:
+        pass
 
 
 class DailyResult:
