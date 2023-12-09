@@ -14,7 +14,7 @@ from pandas import DataFrame, Series
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
-from ex_vnpy import BasicStockData, load_symbol_meta
+from ex_vnpy import load_symbol_meta, BasicSymbolData
 from vnpy.trader.constant import (
     Direction,
     Offset,
@@ -47,7 +47,6 @@ from ex_vnpy.manager.source_manager import SourceManager
 from ex_vnpy.manager.order_manager import OrderManager
 
 
-
 class BacktestingEngine:
     """"""
 
@@ -68,7 +67,9 @@ class BacktestingEngine:
         self.capital: int = 1_000_000
         self.risk_free: float = 0
         self.annual_days: int = 240
+        self.entry_order_type: str = "LIMIT"
         self.mode: BacktestingMode = BacktestingMode.BAR
+        self.symbol_type: str = "CS"
         self.trade_settings = None
         self.strategy_settings = None
         self.detector_settings = None
@@ -109,7 +110,7 @@ class BacktestingEngine:
 
         self.logger = logging.getLogger("BacktestingEngine")
 
-        self.symbol_meta: BasicStockData = None
+        self.symbol_meta: BasicSymbolData = None
 
     def clear_data(self) -> None:
         """
@@ -135,6 +136,7 @@ class BacktestingEngine:
         self.daily_results.clear()
         self.result_statistics = {}
 
+
     def log_parameters(self, output: bool=False) -> str:
         pass
 
@@ -145,6 +147,7 @@ class BacktestingEngine:
         start_dt: datetime,
         end_dt: datetime = None,
         mode: BacktestingMode = BacktestingMode.BAR,
+        symbol_type: str = "CS",
         trade_settings: dict = {},
         ta: dict = {},
         strategy_settings: dict = {},
@@ -159,11 +162,12 @@ class BacktestingEngine:
         self.vt_symbol = vt_symbol
         self.interval = Interval(interval)
         self.mode = mode
+        self.symbol_type = symbol_type
 
         self.start = start_dt
         self.symbol, exchange_str = self.vt_symbol.split(".")
         self.exchange = Exchange(exchange_str)
-        self.symbol_meta = load_symbol_meta(self.symbol)
+        self.symbol_meta = load_symbol_meta(self.symbol, self.symbol_type)
 
         if not end_dt:
             end_dt = datetime.now()
@@ -177,6 +181,7 @@ class BacktestingEngine:
         self.slippage = trade_settings["slippage"]
         self.risk_free = trade_settings["risk_free"]
         self.annual_days = trade_settings["annual_days"]
+        self.entry_order_type = trade_settings["entry_order_type"] if 'entry_order_type' in trade_settings.keys() else 'LIMIT'
 
         self.ta = ta
 
@@ -191,6 +196,8 @@ class BacktestingEngine:
                 strategy_class = getattr(module, strategy_name)
         self.add_strategy(strategy_class, strategy_settings)
         self.strategy.update_trade_settings(trade_settings)
+        if "stoploss_settings" in strategy_settings:
+            self.strategy.update_stoploss_settings(strategy_settings["stoploss_settings"])
 
         # 初始化detector
         self.detector_settings = detector_settings
@@ -204,6 +211,8 @@ class BacktestingEngine:
                 detector_module: ModuleType = importlib.import_module(f'src.signals.{detector_file_stem}')
                 detector_class = getattr(detector_module, detector_name)
             self.strategy.add_signal_detector(detector_class(**detector_setting))
+
+        self.om = OrderManager(self.strategy, self)
 
     def add_strategy(self, strategy_class: Type[CtaTemplate], setting: dict) -> None:
         """"""
@@ -247,14 +256,16 @@ class BacktestingEngine:
                     self.exchange,
                     self.interval,
                     start,
-                    end
+                    end,
+                    self.symbol_type
                 )
             else:
                 data: List[TickData] = load_tick_data(
                     self.symbol,
                     self.exchange,
                     start,
-                    end
+                    end,
+                    self.symbol_type
                 )
 
             self.history_data.extend(data)
@@ -402,6 +413,9 @@ class BacktestingEngine:
             "loss_count_8a": 0
         }
 
+        # 增加止损策略统计
+        stoploss_strategy_dict: dict = {}
+
         # Check if balance is always positive
         positive_balance: bool = False
 
@@ -483,6 +497,9 @@ class BacktestingEngine:
             # 计算胜率指标
             win_rate_dict = self.calculate_win_rate()
 
+            # 统计止损策略
+            stoploss_strategy_dict = self.calculate_stoploss_reason()
+
         # Output
         if output:
             self.output("-" * 30)
@@ -560,6 +577,7 @@ class BacktestingEngine:
         }
 
         statistics.update(win_rate_dict)
+        statistics.update(stoploss_strategy_dict)
 
         # Filter potential error infinite value
         for key, value in statistics.items():
@@ -1122,6 +1140,8 @@ class BacktestingEngine:
     def calculate_win_rate(self) -> dict:
         pass
 
+    def calculate_stoploss_reason(self) -> dict:
+        pass
 
 class DailyResult:
     """"""
@@ -1203,14 +1223,18 @@ def load_bar_data(
     exchange: Exchange,
     interval: Interval,
     start: datetime,
-    end: datetime
+    end: datetime,
+    symbol_type: str = 'CS'
 ) -> List[BarData]:
     """"""
     database: BaseDatabase = get_database()
 
-    return database.load_bar_data(
-        symbol, exchange, interval, start, end
-    )
+    if symbol_type == 'CS':
+        return database.load_bar_data(symbol, exchange, interval, start, end)
+    elif symbol_type == 'INDX':
+        return database.load_index_bar_data(symbol, exchange, interval, start, end)
+
+    return []
 
 
 @lru_cache(maxsize=999)
@@ -1218,41 +1242,45 @@ def load_tick_data(
     symbol: str,
     exchange: Exchange,
     start: datetime,
-    end: datetime
+    end: datetime,
+    symbol_type: str = 'CS'
 ) -> List[TickData]:
     """"""
     database: BaseDatabase = get_database()
 
-    return database.load_tick_data(
-        symbol, exchange, start, end
-    )
+    if symbol_type == 'CS':
+        return database.load_tick_data(symbol, exchange, start, end)
+    elif symbol_type == 'INDX':
+        # TODO: to support INDX tick data
+        return database.load_tick_data(symbol, exchange, start, end)
+
+    return []
+
 
 def evaluate(
     target_name: str,
     strategy_class: CtaTemplate,
     vt_symbol: str,
     interval: Interval,
-    start: datetime,
-    rate: float,
-    slippage: float,
-    size: float,
-    pricetick: float,
-    capital: int,
-    end: datetime,
+    start_dt: datetime,
+    end_dt: datetime,
     mode: BacktestingMode,
+    symbol_type: str,
+    trade_settings: dict,
     ta: dict,
     strategy_settings: dict,
     detector_settings: dict,
     settings: dict
 ) -> tuple:
     """
-    Function for running in multiprocessing.pool
+    Function for running in multiprocessing pool
     """
     from src.engine.backtesting_engine import ExBacktestingEngine
 
     engine: BacktestingEngine = ExBacktestingEngine()
 
     clones = {}
+    clones["trade_settings"] = copy.deepcopy(trade_settings)
     clones["ta"] = copy.deepcopy(ta)
     clones["strategy_settings"] = copy.deepcopy(strategy_settings)
     clones["detector_settings"] = copy.deepcopy(detector_settings)
@@ -1268,18 +1296,15 @@ def evaluate(
     engine.set_parameters(
         vt_symbol=vt_symbol,
         interval=interval,
-        start_dt=start,
-        rate=rate,
-        slippage=slippage,
-        size=size,
-        price_tick=pricetick,
-        capital=capital,
-        end_dt=end,
+        start_dt=start_dt,
+        end_dt=end_dt,
         mode=mode,
-        strategy_class=strategy_class,
+        symbol_type=symbol_type,
+        trade_settings=clones["trade_settings"],
         ta=clones["ta"],
         strategy_settings=clones["strategy_settings"],
-        detector_settings=clones["detector_settings"]
+        detector_settings=clones["detector_settings"],
+        strategy_class=strategy_class
     )
 
     engine.load_data()
@@ -1302,13 +1327,10 @@ def wrap_evaluate(engine: BacktestingEngine, target_name: str) -> callable:
         engine.vt_symbol,
         engine.interval,
         engine.start,
-        engine.rate,
-        engine.slippage,
-        engine.size,
-        engine.price_tick,
-        engine.capital,
         engine.end,
         engine.mode,
+        engine.symbol_type,
+        engine.trade_settings,
         engine.ta,
         engine.strategy_settings,
         engine.detector_settings
