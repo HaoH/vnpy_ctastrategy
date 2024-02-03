@@ -1277,7 +1277,7 @@ def evaluate(
     """
     Function for running in multiprocessing pool
     """
-    from src.engine.backtesting_engine import ExBacktestingEngine
+    from pulse_quant.engine.backtesting_engine import ExBacktestingEngine
 
     engine: BacktestingEngine = ExBacktestingEngine()
 
