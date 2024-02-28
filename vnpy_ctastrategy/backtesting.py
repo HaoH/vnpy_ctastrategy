@@ -256,16 +256,14 @@ class BacktestingEngine:
                     self.exchange,
                     self.interval,
                     start,
-                    end,
-                    self.symbol_type
+                    end
                 )
             else:
                 data: List[TickData] = load_tick_data(
                     self.symbol,
                     self.exchange,
                     start,
-                    end,
-                    self.symbol_type
+                    end
                 )
 
             self.history_data.extend(data)
@@ -1226,17 +1224,11 @@ def load_bar_data(
     interval: Interval,
     start: datetime,
     end: datetime,
-    symbol_type: str = 'CS'
+    stype: str = None
 ) -> List[BarData]:
     """"""
     database: BaseDatabase = get_database()
-
-    if symbol_type == 'CS':
-        return database.load_bar_data(symbol, exchange, interval, start, end)
-    elif symbol_type == 'INDX':
-        return database.load_index_bar_data(symbol, exchange, interval, start, end)
-
-    return []
+    return database.load_bar_data(symbol, exchange, interval, start, end, stype=stype)
 
 
 @lru_cache(maxsize=999)
@@ -1245,18 +1237,11 @@ def load_tick_data(
     exchange: Exchange,
     start: datetime,
     end: datetime,
-    symbol_type: str = 'CS'
 ) -> List[TickData]:
     """"""
     database: BaseDatabase = get_database()
 
-    if symbol_type == 'CS':
-        return database.load_tick_data(symbol, exchange, start, end)
-    elif symbol_type == 'INDX':
-        # TODO: to support INDX tick data
-        return database.load_tick_data(symbol, exchange, start, end)
-
-    return []
+    return database.load_tick_data(symbol, exchange, start, end)
 
 
 def evaluate(
