@@ -15,6 +15,7 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
 from ex_vnpy import load_symbol_meta, BasicSymbolData
+from ex_vnpy.object import ExBarData
 from vnpy.trader.constant import (
     Direction,
     Offset,
@@ -78,7 +79,7 @@ class BacktestingEngine:
         # self.strategy: CtaTemplate = None
         self.strategy: ExStrategyTemplate = None
         self.tick: TickData
-        self.bar: BarData = None
+        self.bar: ExBarData = None
         self.datetime: datetime = None
 
         self.interval: Interval = None
@@ -192,7 +193,7 @@ class BacktestingEngine:
                 strategy_class = classes[strategy_name]
             else:
                 strategy_file_stem = re.sub(r'(?<!^)(?=[A-Z])', '_', strategy_name).lower()
-                module: ModuleType = importlib.import_module(f'src.strategy.{strategy_file_stem}')
+                module: ModuleType = importlib.import_module(f'pulse_quant.strategy.{strategy_file_stem}')
                 strategy_class = getattr(module, strategy_name)
         self.add_strategy(strategy_class, strategy_settings)
         self.strategy.update_trade_settings(trade_settings)
@@ -208,7 +209,7 @@ class BacktestingEngine:
                 detector_class = classes[detector_name]
             else:
                 detector_file_stem = re.sub(r'(?<!^)(?=[A-Z])', '_', detector_name).lower()
-                detector_module: ModuleType = importlib.import_module(f'src.signals.{detector_file_stem}')
+                detector_module: ModuleType = importlib.import_module(f'pulse_quant.signals.{detector_file_stem}')
                 detector_class = getattr(detector_module, detector_name)
             self.strategy.add_signal_detector(detector_class(**detector_setting))
 
@@ -251,7 +252,7 @@ class BacktestingEngine:
             end: datetime = min(end, self.end)  # Make sure end time stays within set range
 
             if self.mode == BacktestingMode.BAR:
-                data: List[BarData] = load_bar_data(
+                data: List[ExBarData] = load_bar_data(
                     self.symbol,
                     self.exchange,
                     self.interval,
@@ -719,7 +720,7 @@ class BacktestingEngine:
         else:
             self.daily_results[d] = DailyResult(d, price)
 
-    def new_bar(self, bar: BarData) -> None:
+    def new_bar(self, bar: ExBarData) -> None:
         """"""
         self.bar = bar
         self.datetime = bar.datetime
@@ -909,7 +910,7 @@ class BacktestingEngine:
         interval: Interval,
         callback: Callable,
         use_database: bool
-    ) -> List[BarData]:
+    ) -> List[ExBarData]:
         """"""
         self.callback = callback
 
@@ -918,7 +919,7 @@ class BacktestingEngine:
 
         symbol, exchange = extract_vt_symbol(vt_symbol)
 
-        bars: List[BarData] = load_bar_data(
+        bars: List[ExBarData] = load_bar_data(
             symbol,
             exchange,
             interval,
@@ -1225,10 +1226,11 @@ def load_bar_data(
     start: datetime,
     end: datetime,
     stype: str = None
-) -> List[BarData]:
+) -> List[ExBarData]:
     """"""
     database: BaseDatabase = get_database()
-    return database.load_bar_data(symbol, exchange, interval, start, end, stype=stype)
+    # return database.load_bar_data(symbol, exchange, interval, start, end, stype=stype)
+    return database.load_ex_bar_data(symbol, exchange, interval, start, end, stype=stype)
 
 
 @lru_cache(maxsize=999)
